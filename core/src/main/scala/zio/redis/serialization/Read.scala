@@ -6,8 +6,7 @@ import zio.Chunk
 
 import scala.util.control.NonFatal
 
-case class SerializationFailure(message: String, cause: Option[Throwable])
-    extends RuntimeException(message, cause.orNull)
+case class SerializationFailure(message: String, cause: Option[Throwable]) extends RuntimeException(message, cause.orNull)
 
 trait Read[A] {
   def apply(chunk: Chunk[Byte]): Read.Result[A]
