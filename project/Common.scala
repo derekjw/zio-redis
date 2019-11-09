@@ -45,18 +45,13 @@ object Common {
     )
   )
 
-//  val testSettings = Seq(
-//    testFrameworks := Seq(new TestFramework("utest.runner.Framework")),
-//    libraryDependencies ++= Seq(
-//      "com.lihaoyi" %% "utest" % "0.6.5" % Test
-//    ) ++ Seq(
-//      "circe-core",
-//      "circe-generic",
-//      "circe-parser",
-//      "circe-testing",
-//      "circe-literal"
-//    ).map("io.circe" %% _ % "0.10.0" % Test)
-//  )
+  val testSettings = Seq(
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio-test"     % "1.0.0-RC16" % "test",
+      "dev.zio" %% "zio-test-sbt" % "1.0.0-RC16" % "test"
+    ),
+    testFrameworks := Seq(new TestFramework("zio.test.sbt.ZTestFramework"))
+  )
 
   val releaseSettings = Seq(
     organization := "com.github.derekjw",
@@ -96,5 +91,5 @@ object Common {
     publishArtifact in Test := false
   )
 
-  val settings: Seq[Def.Setting[_]] = scalaSettings ++ releaseSettings
+  val settings: Seq[Def.Setting[_]] = scalaSettings ++ testSettings ++ releaseSettings
 }
