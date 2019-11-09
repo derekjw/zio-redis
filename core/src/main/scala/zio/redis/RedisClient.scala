@@ -1,6 +1,7 @@
 package zio.redis
 
 import zio.redis.protocol.Constants._
+import zio.redis.serialization.Write
 import zio.{Chunk, ZIO}
 
 trait RedisClient extends Redis {
@@ -15,16 +16,15 @@ object RedisClient {
     def executeOptional(request: Chunk[Chunk[Byte]]): ZIO[R, Nothing, Option[Chunk[Byte]]]
     def executeMulti(request: Chunk[Chunk[Byte]]): ZIO[R, Nothing, Chunk[Chunk[Byte]]]
 
-    def keys(pattern: Chunk[Byte]): ZIO[R, Nothing, Chunk[Chunk[Byte]]] = executeMulti(Chunk(KEYS, pattern))
-    def keys: ZIO[R, Nothing, Chunk[Chunk[Byte]]] = executeMulti(Chunk(KEYS, ALLKEYS))
-    def randomKey: ZIO[R, Nothing, Option[Chunk[Byte]]] = executeOptional(Chunk.single(RANDOMKEY))
-    def rename(oldKey: Chunk[Byte], newKey: Chunk[Byte]): ZIO[R, Nothing, Unit] = executeUnit(Chunk(RENAME, oldKey, newKey))
-    def renamenx(oldKey: Chunk[Byte], newKey: Chunk[Byte]): ZIO[R, Nothing, Boolean] = executeBoolean(Chunk(RENAMENX, oldKey, newKey))
+    def keys[A: Write](pattern: A): Redis.MultiValueResult[R] = Redis.MultiValueResult(executeMulti(Chunk(KEYS, Write(pattern))))
+    def randomKey: Redis.OptionalResult[R] = Redis.OptionalResult(executeOptional(Chunk.single(RANDOMKEY)))
+    def rename[A: Write, B: Write](oldKey: A, newKey: B): ZIO[R, Nothing, Unit] = executeUnit(Chunk(RENAME, Write(oldKey), Write(newKey)))
+    def renamenx[A: Write, B: Write](oldKey: A, newKey: B): ZIO[R, Nothing, Boolean] = executeBoolean(Chunk(RENAMENX, Write(oldKey), Write(newKey)))
     def dbsize: ZIO[R, Nothing, Int] = executeInt(Chunk.single(DBSIZE))
-    def exists(key: Chunk[Byte]): ZIO[R, Nothing, Boolean] = executeBoolean(Chunk(EXISTS, key))
-    def del(keys: Iterable[Chunk[Byte]]): ZIO[R, Nothing, Int] = executeInt(Chunk.single(DEL) ++ Chunk.fromArray(keys.toArray))
+    def exists[A: Write](key: A): ZIO[R, Nothing, Boolean] = executeBoolean(Chunk(EXISTS, Write(key)))
+    def del[A: Write](keys: Iterable[A]): ZIO[R, Nothing, Int] = executeInt(Chunk.single(DEL) ++ Chunk.fromArray(keys.view.map(Write(_)).toArray))
     def ping: ZIO[R, Nothing, Unit] = executeUnit(Chunk.single(PING))
-    def get(key: Chunk[Byte]): ZIO[R, Nothing, Option[Chunk[Byte]]] = executeOptional(Chunk(GET, key))
-    def set(key: Chunk[Byte], value: Chunk[Byte]): ZIO[R, Nothing, Unit] = executeUnit(Chunk(SET, key, value))
+    def get[A: Write](key: A): Redis.OptionalResult[R] = Redis.OptionalResult(executeOptional(Chunk(GET, Write(key))))
+    def set[A: Write, B: Write](key: A, value: B): ZIO[R, Nothing, Unit] = executeUnit(Chunk(SET, Write(key), Write(value)))
   }
 }

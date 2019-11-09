@@ -12,6 +12,8 @@ object Write {
   @inline
   def apply[A](in: A)(implicit write: Write[A]): Chunk[Byte] = write(in)
 
+  implicit val writeIdentity: Write[Chunk[Byte]] = chunk => chunk
+
   implicit val writeString: Write[String] = {
     val charset = Charset.forName("UTF8")
 

@@ -18,6 +18,8 @@ object Read {
   @inline
   def apply[A](chunk: Chunk[Byte])(implicit read: Read[A]): Result[A] = read(chunk)
 
+  implicit val readIdentity: Read[Chunk[Byte]] = chunk => Right(chunk)
+
   implicit val readString: Read[String] = {
     val charset = Charset.forName("UTF8")
 

@@ -1,21 +1,36 @@
 package zio.redis
 
-import zio.{Chunk, ZIO}
+import zio.redis.serialization.Write
+import zio.{Chunk, ZIO, redis}
 import zio.test._
-import zio.test.mock.Expectation.value
+import zio.test.mock.Expectation.{unit, value}
+import zio.test.Assertion.equalTo
 
-object RedisBaseSpec extends DefaultRunnableSpec(
-  suite("RedisBaseSpec")(
-    testM("ping!") {
-      Redis.ping.map(_ => assertCompletes).provide(FakeRedis) // TODO: use mocks
-    },
-    testM("ping mock!") {
-      Redis.ping.map(_ => assertCompletes).provideManaged(
-        MockRedis.ping.returns(value(()))
+object RedisBaseSpec
+    extends DefaultRunnableSpec(
+      suite("RedisBaseSpec")(
+        testM("ping!") {
+          Redis.>.ping
+            .map(_ => assertCompletes)
+            .provide(FakeRedis)
+        },
+        testM("ping mock!") {
+          Redis.>.ping
+            .map(_ => assertCompletes)
+            .provideManaged(
+              MockRedis.ping.returns(unit)
+            )
+        },
+        testM("get mock!") {
+          Redis.>.get("theKey")
+            .as[String]
+            .map(assert(_, equalTo(Some("theValue"))))
+            .provideManaged(
+              redis.MockRedis.get(equalTo(Write("theKey"))).returns(value(Some(Write("theValue"))))
+            )
+        }
       )
-    }
-  )
-)
+    )
 
 object FakeRedis extends Redis {
   override val redis: Redis.Service[Any] = new RedisClient.Service[Any] {
