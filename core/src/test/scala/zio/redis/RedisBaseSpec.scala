@@ -2,11 +2,17 @@ package zio.redis
 
 import zio.{Chunk, ZIO}
 import zio.test._
+import zio.test.mock.Expectation.value
 
 object RedisBaseSpec extends DefaultRunnableSpec(
   suite("RedisBaseSpec")(
     testM("ping!") {
       Redis.ping.map(_ => assertCompletes).provide(FakeRedis) // TODO: use mocks
+    },
+    testM("ping mock!") {
+      Redis.ping.map(_ => assertCompletes).provideManaged(
+        MockRedis.ping.returns(value(()))
+      )
     }
   )
 )
