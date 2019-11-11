@@ -34,23 +34,29 @@ object Iteratees {
   final val readError: Iteratee[RedisError] = readUntilEOL.map(bytesToError)
 
   final val bytesToInteger = (bytes: Chunk[Byte]) => RedisInteger(Read[String](bytes).fold(throw _, _.toLong))
-  final val readInteger: Iteratee[RedisInteger] = readUntilEOL map bytesToInteger
+  final val readInteger: Iteratee[RedisInteger] = readUntilEOL.map(bytesToInteger)
 
   final val notFoundBulk = Done(RedisBulk.notFound)
   final val emptyBulk = Done(RedisBulk.empty)
-  final val bytesToBulk = (bytes: Chunk[Byte]) => Read[String](bytes).fold(throw _, _.toInt) match {
-    case -1 => notFoundBulk
-    case 0  => emptyBulk
-    case n  => for (bytes <- Iteratee.take(n); _ <- readUntilEOL) yield RedisBulk(Some(bytes))
+  final val bytesToBulk = (bytes: Chunk[Byte]) =>
+    Read[String](bytes).fold(throw _, _.toInt) match {
+      case -1 => notFoundBulk
+      case 0  => emptyBulk
+      case n =>
+        for {
+          bytes <- Iteratee.take(n)
+          _ <- readUntilEOL
+        } yield RedisBulk(Some(bytes))
   }
   final val readBulk: Iteratee[RedisBulk] = readUntilEOL.flatMap(bytesToBulk)
 
   final val notFoundMulti = Done(RedisMulti.notFound)
   final val emptyMulti = Done(RedisMulti.empty)
-  final val bytesToMulti = (bytes: Chunk[Byte]) => Read[String](bytes).fold(throw _, _.toInt) match {
-    case -1 => notFoundMulti
-    case 0  => emptyMulti
-    case n  => Iteratee.takeList(n)(readResult).map(x => RedisMulti(Some(x)))
+  final val bytesToMulti = (bytes: Chunk[Byte]) =>
+    Read[String](bytes).fold(throw _, _.toInt) match {
+      case -1 => notFoundMulti
+      case 0  => emptyMulti
+      case n  => Iteratee.takeList(n)(readResult).map(x => RedisMulti(Some(x)))
   }
   final val readMulti: Iteratee[RedisMulti] = readUntilEOL.flatMap(bytesToMulti)
 
@@ -59,8 +65,8 @@ object Iteratees {
 object Iteratee {
 
   /**
-   * An Iteratee that returns a ByteString of the requested length.
-   */
+    * An Iteratee that returns a ByteString of the requested length.
+    */
   def take(length: Int): Iteratee[Chunk[Byte]] = {
     def step(taken: Chunk[Byte])(input: Input): (Iteratee[Chunk[Byte]], Input) = input match {
       case Bytes(more) =>
@@ -76,10 +82,10 @@ object Iteratee {
   }
 
   /**
-   * An Iteratee that returns the ByteString prefix up until the supplied delimiter.
-   * The delimiter is dropped by default, but it can be returned with the result by
-   * setting 'inclusive' to be 'true'.
-   */
+    * An Iteratee that returns the ByteString prefix up until the supplied delimiter.
+    * The delimiter is dropped by default, but it can be returned with the result by
+    * setting 'inclusive' to be 'true'.
+    */
   def takeUntil(delimiter: Chunk[Byte], inclusive: Boolean = false): Iteratee[Chunk[Byte]] = {
     def step(taken: Chunk[Byte])(input: Input): (Iteratee[Chunk[Byte]], Input) = input match {
       case Bytes(more) =>
@@ -98,7 +104,7 @@ object Iteratee {
         }
         if (startIdx >= 0) {
           val endIdx = startIdx + delimiter.length
-          (Done(bytes take (if (inclusive) endIdx else startIdx)), Bytes(bytes drop endIdx))
+          (Done(bytes.take(if (inclusive) endIdx else startIdx)), Bytes(bytes.drop(endIdx)))
         } else {
           (Cont(step(bytes)), Bytes.empty)
         }
@@ -111,7 +117,7 @@ object Iteratee {
   def takeList[A](length: Int)(iter: Iteratee[A]): Iteratee[Chunk[A]] = {
     def step(left: Int, list: Chunk[A]): Iteratee[Chunk[A]] =
       if (left == 0) Done(list)
-      else iter flatMap (a => step(left - 1, list + a))
+      else iter.flatMap(a => step(left - 1, list + a))
 
     step(length, Chunk.empty)
   }
@@ -124,28 +130,28 @@ object Iteratee {
   }
 
   /**
-   * A function 'ByteString => Iteratee[A]' that composes with 'A => Iteratee[B]' functions
-   * in a stack-friendly manner.
-   *
-   * For internal use within Iteratee.
-   */
+    * A function 'ByteString => Iteratee[A]' that composes with 'A => Iteratee[B]' functions
+    * in a stack-friendly manner.
+    *
+    * For internal use within Iteratee.
+    */
   private final case class Chain[A] private (cur: Input => (Iteratee[Any], Input), queue: Queue[Any => Iteratee[Any]]) extends (Input => (Iteratee[A], Input)) {
 
-    def :+[B](f: A => Iteratee[B]) = new Chain[B](cur, queue enqueue f.asInstanceOf[Any => Iteratee[Any]])
+    def :+[B](f: A => Iteratee[B]) = new Chain[B](cur, queue.enqueue(f.asInstanceOf[Any => Iteratee[Any]]))
 
     def apply(input: Input): (Iteratee[A], Input) = {
       @tailrec
-      def run(result: (Iteratee[Any], Input), queue: Queue[Any => Iteratee[Any]]): (Iteratee[Any], Input) = {
+      def run(result: (Iteratee[Any], Input), queue: Queue[Any => Iteratee[Any]]): (Iteratee[Any], Input) =
         if (queue.isEmpty) result
-        else result match {
-          case (Done(value), rest) =>
-            val (head, tail) = queue.dequeue
-            run(head(value)(rest), tail)
-          case (Cont(f), rest) =>
-            (Cont(Chain(f, queue)), rest)
-          case _ => result
-        }
-      }
+        else
+          result match {
+            case (Done(value), rest) =>
+              val (head, tail) = queue.dequeue
+              run(head(value)(rest), tail)
+            case (Cont(f), rest) =>
+              (Cont(Chain(f, queue)), rest)
+            case _ => result
+          }
       run(cur(input), queue).asInstanceOf[(Iteratee[A], Input)]
     }
   }
@@ -172,15 +178,15 @@ case class EOF(cause: Option[Exception]) extends Input {
 }
 
 /**
- * A basic Iteratee implementation of Oleg's Iteratee (http://okmij.org/ftp/Streams.html).
- * No support for Enumerator or Input types other then ByteString at the moment.
- */
+  * A basic Iteratee implementation of Oleg's Iteratee (http://okmij.org/ftp/Streams.html).
+  * No support for Enumerator or Input types other then ByteString at the moment.
+  */
 sealed abstract class Iteratee[+A] {
 
   /**
-   * Applies the given input to the Iteratee, returning the resulting Iteratee
-   * and the unused Input.
-   */
+    * Applies the given input to the Iteratee, returning the resulting Iteratee
+    * and the unused Input.
+    */
   final def apply(input: Input): (Iteratee[A], Input) = this match {
     case Cont(f) => f(input)
     case iter    => (iter, input)
@@ -209,19 +215,19 @@ sealed abstract class Iteratee[+A] {
 }
 
 /**
- * An Iteratee representing a result and the remaining ByteString. Also used to
- * wrap any constants or precalculated values that need to be composed with
- * other Iteratees.
- */
+  * An Iteratee representing a result and the remaining ByteString. Also used to
+  * wrap any constants or precalculated values that need to be composed with
+  * other Iteratees.
+  */
 final case class Done[+A](result: A) extends Iteratee[A]
 
 /**
- * An Iteratee that still requires more input to calculate it's result.
- */
+  * An Iteratee that still requires more input to calculate it's result.
+  */
 final case class Cont[+A](f: Input => (Iteratee[A], Input)) extends Iteratee[A]
 
 /**
- * An Iteratee representing a failure to calcualte a result.
- * FIXME: move into 'Cont' as in Oleg's implementation
- */
+  * An Iteratee representing a failure to calcualte a result.
+  * FIXME: move into 'Cont' as in Oleg's implementation
+  */
 final case class Failure(exception: Throwable) extends Iteratee[Nothing]
