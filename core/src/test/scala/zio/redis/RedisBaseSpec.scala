@@ -31,17 +31,14 @@ object RedisBaseSpec
 
 object TestRun extends zio.App {
   def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
+    val action = ZStream.fromEffect(Redis.>.set("foo3", "bar3").fork).repeat(ZSchedule.recurs(100000)).runDrain *> Redis.>.get("foo3").as[String]
     val app = for {
-      _ <- ZStream.fromEffect(Redis.>.set("foo3", "bar3").fork).repeat(ZSchedule.recurs(100000)).runDrain
-      _ <- Redis.>.get("foo3").as[String]
-      startTime = System.currentTimeMillis()
-      _ <- ZStream.fromEffect(Redis.>.set("foo3", "bar3").fork).repeat(ZSchedule.recurs(100000)).runDrain
-      result <- Redis.>.get("foo3").as[String]
-      endTime = System.currentTimeMillis()
-      _ <- zio.console.putStrLn((endTime - startTime).toString)
-      _ <- zio.console.putStrLn(result.getOrElse("NULL"))
+      _ <- action
+      result <- action.timed
+      _ <- zio.console.putStrLn(result._1.toMillis.toString)
+      _ <- zio.console.putStrLn(result._2.getOrElse("NULL"))
     } yield ()
-    app.untraced.provideManaged(Redis.live(6379) @@ enrichWith[zio.console.Console](zio.console.Console.Live)).catchAll { e =>
+    app.untraced.provideManaged(Redis.live(6379) @@ enrichWith[zio.console.Console](zio.console.Console.Live) @@ enrichWith[zio.clock.Clock](zio.clock.Clock.Live)).catchAll { e =>
       zio.console.putStrLn(e.toString)
     }.as(0)
   }
