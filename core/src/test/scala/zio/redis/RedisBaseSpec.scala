@@ -41,7 +41,7 @@ object TestRun extends zio.App {
       _ <- zio.console.putStrLn((endTime - startTime).toString)
       _ <- zio.console.putStrLn(result.getOrElse("NULL"))
     } yield ()
-    app.provideManaged(Redis.live(6379) @@ enrichWith[zio.console.Console](zio.console.Console.Live)).catchAll { e =>
+    app.untraced.provideManaged(Redis.live(6379) @@ enrichWith[zio.console.Console](zio.console.Console.Live)).catchAll { e =>
       zio.console.putStrLn(e.toString)
     }.as(0)
   }
