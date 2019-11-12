@@ -31,7 +31,7 @@ object RedisBaseSpec
 
 object TestRun extends zio.App {
   def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
-    val action = ZStream.fromEffect(Redis.>.set("foo3", "bar3").fork).repeat(ZSchedule.recurs(100000)).runDrain *> Redis.>.get("foo3").as[String]
+    val action = ZStream.range(0, 100000).mapMPar(128)(n => Redis.>.set("foo3", "bar" + n)).runDrain *> Redis.>.get("foo3").as[String]
     val app = for {
       _ <- action
       result <- action.timed
