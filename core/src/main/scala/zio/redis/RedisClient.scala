@@ -53,16 +53,14 @@ object RedisClient {
       channel <- managedChannel(port)
       writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](64).toManaged_
       responsesQueue <- Queue.unbounded[Response[_]].toManaged_ // trigger failures for enqueued responses on release?
-      writeFiber <- writeQueue.take.flatMap(x => channel.write(x._1) *> responsesQueue.offer(x._2)).unit.repeat(ZSchedule.forever).on(ExecutionContext.global).fork.toManaged_
+      writeFiber <- ZStream.fromQueue(writeQueue).mapM(x => channel.write(x._1).as(x._2)).foreach(responsesQueue.offer).forkOn(ExecutionContext.global).toManaged_
       reader = channel.read(8192).catchSome { case _: AsynchronousCloseException | _: ClosedChannelException => ZIO.succeed(Chunk.empty) }
       responseFiber <- ZStream
         .fromEffect(reader)
         .repeat(ZSchedule.forever)
         .mapAccum(Iteratees.readResult)(parseResponse(_, _))
-        .mapM(_.mapM_(bytes => responsesQueue.take.flatMap(_(bytes))))
-        .runDrain
-        .on(ExecutionContext.global)
-        .fork
+        .foreach(_.mapM_(bytes => responsesQueue.take.flatMap(_(bytes))))
+        .forkOn(ExecutionContext.global)
         .toManaged_
     } yield new RedisClient[R](writeQueue, writeFiber.join.raceAttempt(responseFiber.join).flatMap(_ => ZIO.never))
 
