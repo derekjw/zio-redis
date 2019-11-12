@@ -2,8 +2,3 @@ language: scala
 
 scala:
    - 2.13.2
-
-jdk: oraclejdk11
-
-script:
-  - travis_wait 30 sbt clean test
