@@ -13,7 +13,7 @@ import zio.{Chunk, IO, Managed, Promise, Queue, ZIO, ZManaged, ZSchedule}
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 
-class RedisClient[R] private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[_])], runner: ZIO[R, Exception, Nothing]) extends Redis.Service[R] {
+class RedisClient[R] private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[_])], runner: ZIO[Any, Exception, Nothing]) extends Redis.Service[R] {
   private def executeUnit(request: Chunk[Chunk[Byte]]): ZIO[R, Exception, Unit] =
     Promise.make[Exception, Unit].flatMap(p => send(request, new RedisClient.UnitResponse(p)))
   private def executeBoolean(request: Chunk[Chunk[Byte]]): ZIO[R, Nothing, Boolean] = ???
