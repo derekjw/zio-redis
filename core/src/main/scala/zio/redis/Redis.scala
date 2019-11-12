@@ -23,7 +23,7 @@ object Redis {
     def set[A: Write, B: Write](key: A, value: B): ZIO[R, Exception, Unit]
   }
 
-  def service(port: Int): Managed[Exception, Redis.Service[Any]] = RedisClient[Any](port)
+  def service(port: Int): Managed[Exception, Redis.Service[Any]] = RedisClient(port)
   def live(port: Int): Managed[Exception, Redis] = service(port).map(r => new Redis { val redis: Service[Any] = r })
 
   object > extends Service[Redis] {

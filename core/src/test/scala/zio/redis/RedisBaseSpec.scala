@@ -15,7 +15,7 @@ object RedisBaseSpec
           Redis.>.ping
             .map(_ => assertCompletes)
             .provideManaged(
-              MockRedis.ping returns unit
+              MockRedis.ping.returns(unit)
             )
         },
         testM("get mock!") {
@@ -23,7 +23,7 @@ object RedisBaseSpec
             .as[String]
             .map(assert(_, equalTo(Some("theValue"))))
             .provideManaged(
-              MockRedis.get(equalTo(Write("theKey"))) returns value(Some(Write("theValue")))
+              MockRedis.get(equalTo(Write("theKey"))).returns(value(Some(Write("theValue"))))
             )
         }
       )
@@ -38,8 +38,11 @@ object TestRun extends zio.App {
       _ <- zio.console.putStrLn(result._1.toMillis.toString)
       _ <- zio.console.putStrLn(result._2.getOrElse("NULL"))
     } yield ()
-    app.untraced.provideManaged(Redis.live(6379) @@ enrichWith[zio.console.Console](zio.console.Console.Live) @@ enrichWith[zio.clock.Clock](zio.clock.Clock.Live)).catchAll { e =>
-      zio.console.putStrLn(e.toString)
-    }.as(0)
+    app.untraced
+      .provideManaged(Redis.live(6379) @@ enrichWith[zio.console.Console](zio.console.Console.Live) @@ enrichWith[zio.clock.Clock](zio.clock.Clock.Live))
+      .catchAll { e =>
+        zio.console.putStrLn(e.toString)
+      }
+      .as(0)
   }
 }
