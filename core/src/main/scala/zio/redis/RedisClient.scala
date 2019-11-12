@@ -51,7 +51,7 @@ object RedisClient {
   def apply[R](port: Int = 6379): ZManaged[R, Exception, Redis.Service[R]] =
     for {
       channel <- managedChannel(port)
-      writeQueue <- Queue.bounded[Chunk[Byte]](16).toManaged_
+      writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](64).toManaged_
       responsesQueue <- Queue.unbounded[Response[_]].toManaged_ // trigger failures for enqueued responses on release?
       writeFiber <- writeQueue.take.flatMap(x => channel.write(x._1) *> responsesQueue.offer(x._2)).unit.repeat(ZSchedule.forever).on(ExecutionContext.global).fork.toManaged_
       reader = channel.read(8192).catchSome { case _: AsynchronousCloseException | _: ClosedChannelException => ZIO.succeed(Chunk.empty) }
