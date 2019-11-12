@@ -13,7 +13,7 @@ import zio.{Chunk, IO, Managed, Promise, Queue, ZIO, ZManaged, ZSchedule}
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 
-class RedisClient[R] private (writeQueue: Queue[Chunk[Byte]], responsesQueue: Queue[RedisClient.Response[_]], runner: ZIO[R, Exception, Nothing]) extends Redis.Service[R] {
+class RedisClient[R] private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[_])], runner: ZIO[R, Exception, Nothing]) extends Redis.Service[R] {
   private def executeUnit(request: Chunk[Chunk[Byte]]): ZIO[R, Exception, Unit] =
     Promise.make[Exception, Unit].flatMap(p => send(request, new RedisClient.UnitResponse(p)))
   private def executeBoolean(request: Chunk[Chunk[Byte]]): ZIO[R, Nothing, Boolean] = ???
@@ -23,7 +23,7 @@ class RedisClient[R] private (writeQueue: Queue[Chunk[Byte]], responsesQueue: Qu
   private def executeMulti(request: Chunk[Chunk[Byte]]): ZIO[R, Nothing, Chunk[Chunk[Byte]]] = ???
 
   private def send[A](request: Chunk[Chunk[Byte]], response: RedisClient.Response[A]) =
-    (writeQueue.offer(format(request)) *> responsesQueue.offer(response) *> response.get).raceAttempt(runner)
+    (writeQueue.offer((format(request), response)) *> response.get).raceAttempt(runner)
 
   private def format(request: Chunk[Chunk[Byte]]): Chunk[Byte] = {
     val count = request.length
@@ -53,7 +53,7 @@ object RedisClient {
       channel <- managedChannel(port)
       writeQueue <- Queue.bounded[Chunk[Byte]](16).toManaged_
       responsesQueue <- Queue.unbounded[Response[_]].toManaged_ // trigger failures for enqueued responses on release?
-      writeFiber <- writeQueue.take.flatMap(channel.write).unit.repeat(ZSchedule.forever).on(ExecutionContext.global).fork.toManaged_
+      writeFiber <- writeQueue.take.flatMap(x => channel.write(x._1) *> responsesQueue.offer(x._2)).unit.repeat(ZSchedule.forever).on(ExecutionContext.global).fork.toManaged_
       reader = channel.read(8192).catchSome { case _: AsynchronousCloseException | _: ClosedChannelException => ZIO.succeed(Chunk.empty) }
       responseFiber <- ZStream
         .fromEffect(reader)
@@ -64,12 +64,12 @@ object RedisClient {
         .on(ExecutionContext.global)
         .fork
         .toManaged_
-    } yield new RedisClient[R](writeQueue, responsesQueue, writeFiber.join.raceAttempt(responseFiber.join).flatMap(_ => ZIO.never))
+    } yield new RedisClient[R](writeQueue, writeFiber.join.raceAttempt(responseFiber.join).flatMap(_ => ZIO.never))
 
   private def managedChannel(port: Int): Managed[Exception, AsynchronousSocketChannel] =
     for {
       channel <- AsynchronousSocketChannel()
-      address <- SocketAddress.inetSocketAddress(port).toManaged_
+      address <- SocketAddress.inetSocketAddress("localhost", port).toManaged_
       _ <- channel.connect(address).toManaged_
     } yield channel
 
