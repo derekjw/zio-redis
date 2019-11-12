@@ -1,6 +1,6 @@
 package zio.redis
 
-import zio.{ZIO, ZSchedule}
+import zio.ZIO
 import zio.redis.serialization.Write
 import zio.test._
 import zio.test.mock.Expectation.{unit, value}
