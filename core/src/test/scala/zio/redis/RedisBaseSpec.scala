@@ -1,6 +1,6 @@
 package zio.redis
 
-import zio.ZIO
+import zio.{ZEnv, ZIO}
 import zio.redis.serialization.Write
 import zio.test._
 import zio.test.mock.Expectation.{unit, value}
@@ -39,7 +39,7 @@ object TestRun extends zio.App {
       _ <- zio.console.putStrLn(result._2.getOrElse("NULL"))
     } yield ()
     app.untraced
-      .provideManaged(Redis.live(6379) @@ enrichWith[zio.console.Console](zio.console.Console.Live) @@ enrichWith[zio.clock.Clock](zio.clock.Clock.Live))
+      .provideManaged(Redis.live(6379) @@ enrichWith[ZEnv](Environment))
       .catchAll { e =>
         zio.console.putStrLn(e.toString)
       }
