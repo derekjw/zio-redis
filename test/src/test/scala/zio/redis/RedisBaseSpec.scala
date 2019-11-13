@@ -1,6 +1,8 @@
 package zio.redis
 
+import zio.internal.{Platform, PlatformLive}
 import zio.{ZEnv, ZIO}
+import zio.console.putStrLn
 import zio.redis.serialization.Write
 import zio.redis.mock.MockRedis
 import zio.test._
@@ -30,20 +32,22 @@ object RedisBaseSpec
     )
 
 object TestRun extends zio.App {
+  override val Platform: Platform = PlatformLive.Benchmark
+
   def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
+    val ops = 200000
     val key = Write("foo3")
-    val action = (0 until 100000).map(n => Redis.>.set(key, Write("bar" + n))).reduceLeft(_.zipWithPar(_)((_, _) => ())) *> Redis.>.get("foo3").as[String]
+    val action = (0 until ops).map(n => Redis.>.set(key, Write("bar" + n))).reduceLeft(_.zipWithPar(_)((_, _) => ())) *> Redis.>.get("foo3").as[String]
+    val env = Redis.live(6379) @@ enrichWith[ZEnv](Environment)
+
     val app = for {
       _ <- action
       result <- action.timed
-      _ <- zio.console.putStrLn(result._1.toMillis.toString)
-      _ <- zio.console.putStrLn(result._2.getOrElse("NULL"))
+      opsPerSec = ops * 1000 / result._1.toMillis
+      _ <- putStrLn(s"$opsPerSec/s")
+      _ <- putStrLn(result._2.getOrElse("NULL"))
     } yield ()
-    app.untraced
-      .provideManaged(Redis.live(6379) @@ enrichWith[ZEnv](Environment))
-      .catchAll { e =>
-        zio.console.putStrLn(e.toString)
-      }
-      .as(0)
+
+    app.provideManaged(env).orDie.as(0)
   }
 }
