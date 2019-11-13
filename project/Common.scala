@@ -1,11 +1,9 @@
-import com.lucidchart.sbt.scalafmt.ScalafmtCorePlugin.autoImport.scalafmtOnCompile
 import sbt._
 import sbt.Keys._
 
 object Common {
   val scalaSettings = Seq(
     scalaVersion := "2.13.1",
-    scalafmtOnCompile := true,
     scalacOptions ++= Seq(
       "-deprecation",                      // Emit warning and location for usages of deprecated APIs.
       "-encoding", "utf-8",                // Specify character encoding used by source files.
@@ -43,14 +41,6 @@ object Common {
       "-Ywarn-unused:privates",            // Warn if a private member is unused.
       "-Ywarn-value-discard"               // Warn when non-Unit expression results are unused.
     )
-  )
-
-  val testSettings = Seq(
-    libraryDependencies ++= Seq(
-      "dev.zio" %% "zio-test"     % "1.0.0-RC16" % "test",
-      "dev.zio" %% "zio-test-sbt" % "1.0.0-RC16" % "test"
-    ),
-    testFrameworks := Seq(new TestFramework("zio.test.sbt.ZTestFramework"))
   )
 
   val releaseSettings = Seq(
@@ -91,5 +81,5 @@ object Common {
     publishArtifact in Test := false
   )
 
-  val settings: Seq[Def.Setting[_]] = scalaSettings ++ testSettings ++ releaseSettings
+  val settings: Seq[Def.Setting[_]] = scalaSettings ++ releaseSettings
 }

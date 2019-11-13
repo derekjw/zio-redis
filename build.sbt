@@ -2,9 +2,11 @@ import sbtrelease.ReleaseStateTransformations._
 
 name := "zio-redis"
 
-lazy val `zio-redis` = (project in file(".")).aggregate(core)
+lazy val `zio-redis` = (project in file(".")).aggregate(core, test)
 
 lazy val core = project in file("core")
+
+lazy val test = (project in file("test")).dependsOn(core)
 
 Common.settings
 

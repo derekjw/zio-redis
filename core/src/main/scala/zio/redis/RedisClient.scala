@@ -107,7 +107,7 @@ object RedisClient {
 
     def run(ready: Chunk[Byte]): IO[Exception, Unit] =
       if (ready.nonEmpty) {
-        write(ready) *> dequeue >>= run
+        write(ready).fork >>= (dequeue <* _.join) >>= run
       } else {
         dequeue >>= run
       }

@@ -2,18 +2,18 @@ package zio.redis
 
 import zio.{ZEnv, ZIO}
 import zio.redis.serialization.Write
+import zio.redis.mock.MockRedis
 import zio.test._
 import zio.test.mock.Expectation.{unit, value}
 import zio.test.Assertion.equalTo
 import zio.macros.delegate._
-import zio.stream.ZStream
 
 object RedisBaseSpec
     extends DefaultRunnableSpec(
       suite("RedisBaseSpec")(
         testM("ping mock!") {
           Redis.>.ping
-            .map(_ => assertCompletes)
+            .as(assertCompletes)
             .provideManaged(
               MockRedis.ping.returns(unit)
             )
@@ -31,7 +31,8 @@ object RedisBaseSpec
 
 object TestRun extends zio.App {
   def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
-    val action = ZStream.range(0, 100000).mapMPar(128)(n => Redis.>.set("foo3", "bar" + n)).runDrain *> Redis.>.get("foo3").as[String]
+    val key = Write("foo3")
+    val action = (0 until 100000).map(n => Redis.>.set(key, Write("bar" + n))).reduceLeft(_.zipWithPar(_)((_, _) => ())) *> Redis.>.get("foo3").as[String]
     val app = for {
       _ <- action
       result <- action.timed

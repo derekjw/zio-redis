@@ -1,8 +1,9 @@
-package zio.redis
+package zio.redis.mock
 
+import zio.redis.Redis
 import zio.redis.serialization.Write
-import zio.{Chunk, ZIO}
 import zio.test.mock.{Method, Mock, Mockable}
+import zio.{Chunk, ZIO}
 
 trait MockRedis extends Redis {
   val redis: MockRedis.Service[Any]
@@ -13,6 +14,7 @@ object MockRedis {
 
   object keys extends Method[MockRedis, Chunk[Byte], Chunk[Chunk[Byte]]]
   object get extends Method[MockRedis, Chunk[Byte], Option[Chunk[Byte]]]
+  object set extends Method[MockRedis, (Chunk[Byte], Chunk[Byte]), Unit]
   object ping extends Method[MockRedis, Unit, Unit]
 
   implicit val mockable: Mockable[MockRedis] = (mock: Mock) =>
@@ -27,7 +29,7 @@ object MockRedis {
         override def del[A: Write](keys: Iterable[A]): ZIO[Any, Nothing, Int] = ???
         override def ping: ZIO[Any, Nothing, Unit] = mock(MockRedis.ping)
         override def get[A: Write](key: A): Redis.OptionalResult[Any] = Redis.OptionalResult(mock(MockRedis.get, Write(key)).flatMap(ZIO.succeed))
-        override def set[A: Write, B: Write](key: A, value: B): ZIO[Any, Nothing, Unit] = ???
+        override def set[A: Write, B: Write](key: A, value: B): ZIO[Any, Nothing, Unit] = mock(MockRedis.set, (Write(key), Write(value)))
       }
-  }
+    }
 }

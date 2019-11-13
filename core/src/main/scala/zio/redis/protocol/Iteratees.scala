@@ -47,7 +47,7 @@ object Iteratees {
           bytes <- Iteratee.take(n)
           _ <- readUntilEOL
         } yield RedisBulk(Some(bytes))
-  }
+    }
   final val readBulk: Iteratee[RedisBulk] = readUntilEOL.flatMap(bytesToBulk)
 
   final val notFoundMulti = Done(RedisMulti.notFound)
@@ -57,7 +57,7 @@ object Iteratees {
       case -1 => notFoundMulti
       case 0  => emptyMulti
       case n  => Iteratee.takeList(n)(readResult).map(x => RedisMulti(Some(x)))
-  }
+    }
   final val readMulti: Iteratee[RedisMulti] = readUntilEOL.flatMap(bytesToMulti)
 
 }
