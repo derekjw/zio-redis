@@ -55,6 +55,8 @@ object TestRun extends zio.App {
       opsPerSec = ops * 1000 / result._1.toMillis
       _ <- putStrLn(s"$opsPerSec/s")
       _ <- putStrLn(result._2.getOrElse("NULL"))
+      keyResult <- Redis.>.allkeys.as[List[String]]
+      _ <- putStrLn(s"All keys: $keyResult")
     } yield ()
 
     app.provideManaged(env).orDie.as(0)
