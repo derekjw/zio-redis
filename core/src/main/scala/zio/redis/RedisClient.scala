@@ -5,10 +5,10 @@ import java.nio.channels.{AsynchronousCloseException, ClosedChannelException}
 import zio.nio.SocketAddress
 import zio.nio.channels.AsynchronousSocketChannel
 import zio.redis.protocol.Constants._
-import zio.redis.protocol.{Bytes, Done, Iteratee, Iteratees, RedisBulk, RedisString, RedisType}
+import zio.redis.protocol.{Bytes, Done, Iteratee, Iteratees, RedisBulk, RedisMulti, RedisString, RedisType}
 import zio.redis.serialization.Write
 import zio.stream.ZStream
-import zio.{Chunk, IO, Managed, Promise, Queue, ZIO, ZSchedule}
+import zio.{Chunk, IO, Managed, Promise, Queue, ZIO, ZSchedule, redis}
 
 import scala.annotation.tailrec
 
@@ -19,7 +19,8 @@ class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[
   private def executeInt(request: Chunk[Chunk[Byte]]): IO[Nothing, Int] = ???
   private def executeOptional(request: Chunk[Chunk[Byte]]): IO[Exception, Option[Chunk[Byte]]] =
     Promise.make[Exception, Option[Chunk[Byte]]].flatMap(p => send(request, new RedisClient.BulkResponse(p)))
-  private def executeMulti(request: Chunk[Chunk[Byte]]): IO[Nothing, Chunk[Chunk[Byte]]] = ???
+  private def executeMultiBulk(request: Chunk[Chunk[Byte]]): IO[Exception, Chunk[Chunk[Byte]]] =
+    Promise.make[Exception, Chunk[Chunk[Byte]]].flatMap(p => send(request, new redis.RedisClient.MultiBulkResponse(p)))
 
   private def send[A](request: Chunk[Chunk[Byte]], response: RedisClient.Response[A]): IO[Exception, A] =
     writeQueue.offer((format(request), response)) *> response.get
@@ -33,7 +34,7 @@ class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[
       .materialize
   }
 
-  def keys[A: Write](pattern: A): Redis.MultiValueResult[Any] = Redis.MultiValueResult(executeMulti(Chunk(KEYS, Write(pattern))))
+  def keys[A: Write](pattern: A): Redis.MultiValueResult[Any] = Redis.MultiValueResult(executeMultiBulk(Chunk(KEYS, Write(pattern))))
   def randomKey: Redis.OptionalResult[Any] = Redis.OptionalResult(executeOptional(Chunk.single(RANDOMKEY)))
   def rename[A: Write, B: Write](oldKey: A, newKey: B): IO[Exception, Unit] = executeUnit(Chunk(RENAME, Write(oldKey), Write(newKey)))
   def renamenx[A: Write, B: Write](oldKey: A, newKey: B): IO[Nothing, Boolean] = executeBoolean(Chunk(RENAMENX, Write(oldKey), Write(newKey)))
@@ -94,6 +95,18 @@ object RedisClient {
     def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
       case RedisBulk(value) => promise.succeed(value).unit
       case _                => promise.fail(new RuntimeException("Invalid RedisType")).unit
+    }
+  }
+
+  private class MultiBulkResponse(promise: Promise[Exception, Chunk[Chunk[Byte]]]) extends Response[Chunk[Chunk[Byte]]](promise) {
+    def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
+      case RedisMulti(multiValue) =>
+        promise.completeWith {
+          multiValue.getOrElse(Chunk.empty).mapM {
+            case RedisBulk(value) => ZIO.succeed(value.getOrElse(Chunk.empty))
+            case _                => ZIO.fail(new RuntimeException("Invalid RedisType"))
+          }
+        }.unit
     }
   }
 

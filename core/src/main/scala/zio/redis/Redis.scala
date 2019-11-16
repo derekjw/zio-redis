@@ -1,7 +1,7 @@
 package zio.redis
 
 import zio.redis.protocol.Constants
-import zio.redis.serialization.{Read, SerializationFailure, Write}
+import zio.redis.serialization.{MultiRead, Read, Write}
 import zio.{Chunk, Managed, ZIO}
 
 trait Redis {
@@ -51,9 +51,9 @@ object Redis {
     }
   }
 
-  case class MultiValueResult[R](bytes: ZIO[R, Nothing, Chunk[Chunk[Byte]]]) {
-    def unit: ZIO[R, Nothing, Unit] = bytes.unit
-    def as[A: Read]: ZIO[R, SerializationFailure, Chunk[A]] = ??? //bytes.flatMap(chunk => ZIO.fromEither(Read(chunk)))
+  case class MultiValueResult[R](bytes: ZIO[R, Exception, Chunk[Chunk[Byte]]]) {
+    def unit: ZIO[R, Exception, Unit] = bytes.unit
+    def as[A: MultiRead]: ZIO[R, Exception, A] = bytes.flatMap(bs => ZIO.fromEither(MultiRead(bs)))
   }
 
 }

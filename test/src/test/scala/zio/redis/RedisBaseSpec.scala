@@ -1,7 +1,7 @@
 package zio.redis
 
 import zio.internal.{Platform, PlatformLive}
-import zio.{ZEnv, ZIO}
+import zio.{Chunk, ZEnv, ZIO}
 import zio.console.putStrLn
 import zio.redis.serialization.Write
 import zio.redis.mock.MockRedis
@@ -9,23 +9,32 @@ import zio.test._
 import zio.test.mock.Expectation.{unit, value}
 import zio.test.Assertion.equalTo
 import zio.macros.delegate._
+import zio.redis.protocol.Constants
 
 object RedisBaseSpec
     extends DefaultRunnableSpec(
       suite("RedisBaseSpec")(
-        testM("ping mock!") {
+        testM("ping") {
           Redis.>.ping
             .as(assertCompletes)
             .provideManaged(
               MockRedis.ping.returns(unit)
             )
         },
-        testM("get mock!") {
+        testM("get") {
           Redis.>.get("theKey")
             .as[String]
             .map(assert(_, equalTo(Some("theValue"))))
             .provideManaged(
               MockRedis.get(equalTo(Write("theKey"))).returns(value(Some(Write("theValue"))))
+            )
+        },
+        testM("allkeys") {
+          Redis.>.allkeys
+            .as[List[String]]
+            .map(assert(_, equalTo(List("key1", "key2"))))
+            .provideManaged(
+              MockRedis.keys(equalTo(Constants.ALLKEYS)).returns(value(Chunk(Write("key1"), Write("key2"))))
             )
         }
       )
