@@ -4,4 +4,7 @@ scala:
    - 2.13.1
 
 script:
-   - sbt scalafmtCheckAll test
+   - sbt clean scalafmtCheckAll coverage test coverageReport
+
+after_success:
+   - bash <(curl -s https://codecov.io/bash)
