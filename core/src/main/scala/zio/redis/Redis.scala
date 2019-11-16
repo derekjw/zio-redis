@@ -14,10 +14,12 @@ object Redis {
     def allkeys: MultiValueResult[R] = keys(Constants.ALLKEYS)
     def randomKey: OptionalResult[R]
     def rename[A: Write, B: Write](oldKey: A, newKey: B): ZIO[R, Exception, Unit]
-    def renamenx[A: Write, B: Write](oldKey: A, newKey: B): ZIO[R, Nothing, Boolean]
-    def dbsize: ZIO[R, Nothing, Int]
-    def exists[A: Write](key: A): ZIO[R, Nothing, Boolean]
-    def del[A: Write](keys: Iterable[A]): ZIO[R, Nothing, Int]
+    def renamenx[A: Write, B: Write](oldKey: A, newKey: B): ZIO[R, Exception, Boolean]
+    def dbsize: ZIO[R, Exception, Long]
+    def exists[A: Write](keys: Iterable[A]): ZIO[R, Exception, Long]
+    def exists[A: Write](key: A): ZIO[R, Exception, Boolean] = exists(List(key)).map(_ == 1)
+    def del[A: Write](keys: Iterable[A]): ZIO[R, Exception, Long]
+    def del[A: Write](key: A): ZIO[R, Exception, Boolean] = del(List(key)).map(_ == 1)
     def ping: ZIO[R, Exception, Unit]
     def get[A: Write](key: A): OptionalResult[R]
     def set[A: Write, B: Write](key: A, value: B): ZIO[R, Exception, Unit]
@@ -30,10 +32,10 @@ object Redis {
     def keys[A: Write](pattern: A): MultiValueResult[Redis] = MultiValueResult(ZIO.accessM[Redis](_.redis.keys(pattern).bytes))
     def randomKey: OptionalResult[Redis] = OptionalResult(ZIO.accessM[Redis](_.redis.randomKey.bytes))
     def rename[A: Write, B: Write](oldKey: A, newKey: B): ZIO[Redis, Exception, Unit] = ZIO.accessM[Redis](_.redis.rename(oldKey, newKey))
-    def renamenx[A: Write, B: Write](oldKey: A, newKey: B): ZIO[Redis, Nothing, Boolean] = ZIO.accessM[Redis](_.redis.renamenx(oldKey, newKey))
-    def dbsize: ZIO[Redis, Nothing, Int] = ZIO.accessM[Redis](_.redis.dbsize)
-    def exists[A: Write](key: A): ZIO[Redis, Nothing, Boolean] = ZIO.accessM[Redis](_.redis.exists(key))
-    def del[A: Write](keys: Iterable[A]): ZIO[Redis, Nothing, Int] = ZIO.accessM[Redis](_.redis.del(keys))
+    def renamenx[A: Write, B: Write](oldKey: A, newKey: B): ZIO[Redis, Exception, Boolean] = ZIO.accessM[Redis](_.redis.renamenx(oldKey, newKey))
+    def dbsize: ZIO[Redis, Exception, Long] = ZIO.accessM[Redis](_.redis.dbsize)
+    def exists[A: Write](keys: Iterable[A]): ZIO[Redis, Exception, Long] = ZIO.accessM[Redis](_.redis.exists(keys))
+    def del[A: Write](keys: Iterable[A]): ZIO[Redis, Exception, Long] = ZIO.accessM[Redis](_.redis.del(keys))
     def ping: ZIO[Redis, Exception, Unit] = ZIO.accessM[Redis](_.redis.ping)
     def get[A: Write](key: A): OptionalResult[Redis] = OptionalResult(ZIO.accessM[Redis](_.redis.get(key).bytes))
     def set[A: Write, B: Write](key: A, value: B): ZIO[Redis, Exception, Unit] = ZIO.accessM[Redis](_.redis.set(key, value))

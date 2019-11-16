@@ -5,7 +5,7 @@ import java.nio.channels.{AsynchronousCloseException, ClosedChannelException}
 import zio.nio.SocketAddress
 import zio.nio.channels.AsynchronousSocketChannel
 import zio.redis.protocol.Constants._
-import zio.redis.protocol.{Bytes, Done, Iteratee, Iteratees, RedisBulk, RedisMulti, RedisString, RedisType}
+import zio.redis.protocol.{Bytes, Done, Iteratee, Iteratees, RedisBulk, RedisInteger, RedisMulti, RedisString, RedisType}
 import zio.redis.serialization.Write
 import zio.stream.ZStream
 import zio.{Chunk, IO, Managed, Promise, Queue, ZIO, ZSchedule, redis}
@@ -15,8 +15,10 @@ import scala.annotation.tailrec
 class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[_])]) extends Redis.Service[Any] {
   private def executeUnit(request: Chunk[Chunk[Byte]]): IO[Exception, Unit] =
     Promise.make[Exception, Unit].flatMap(p => send(request, new RedisClient.UnitResponse(p)))
-  private def executeBoolean(request: Chunk[Chunk[Byte]]): IO[Nothing, Boolean] = ???
-  private def executeInt(request: Chunk[Chunk[Byte]]): IO[Nothing, Int] = ???
+  private def executeBoolean(request: Chunk[Chunk[Byte]]): IO[Exception, Boolean] =
+    Promise.make[Exception, Boolean].flatMap(p => send(request, new RedisClient.BooleanResponse(p)))
+  private def executeInteger(request: Chunk[Chunk[Byte]]): IO[Exception, Long] =
+    Promise.make[Exception, Long].flatMap(p => send(request, new RedisClient.IntegerResponse(p)))
   private def executeOptional(request: Chunk[Chunk[Byte]]): IO[Exception, Option[Chunk[Byte]]] =
     Promise.make[Exception, Option[Chunk[Byte]]].flatMap(p => send(request, new RedisClient.BulkResponse(p)))
   private def executeMultiBulk(request: Chunk[Chunk[Byte]]): IO[Exception, Chunk[Chunk[Byte]]] =
@@ -37,10 +39,10 @@ class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[
   def keys[A: Write](pattern: A): Redis.MultiValueResult[Any] = Redis.MultiValueResult(executeMultiBulk(Chunk(KEYS, Write(pattern))))
   def randomKey: Redis.OptionalResult[Any] = Redis.OptionalResult(executeOptional(Chunk.single(RANDOMKEY)))
   def rename[A: Write, B: Write](oldKey: A, newKey: B): IO[Exception, Unit] = executeUnit(Chunk(RENAME, Write(oldKey), Write(newKey)))
-  def renamenx[A: Write, B: Write](oldKey: A, newKey: B): IO[Nothing, Boolean] = executeBoolean(Chunk(RENAMENX, Write(oldKey), Write(newKey)))
-  def dbsize: IO[Nothing, Int] = executeInt(Chunk.single(DBSIZE))
-  def exists[A: Write](key: A): IO[Nothing, Boolean] = executeBoolean(Chunk(EXISTS, Write(key)))
-  def del[A: Write](keys: Iterable[A]): IO[Nothing, Int] = executeInt(Chunk.single(DEL) ++ Chunk.fromArray(keys.view.map(Write(_)).toArray))
+  def renamenx[A: Write, B: Write](oldKey: A, newKey: B): IO[Exception, Boolean] = executeBoolean(Chunk(RENAMENX, Write(oldKey), Write(newKey)))
+  def dbsize: IO[Exception, Long] = executeInteger(Chunk.single(DBSIZE))
+  def exists[A: Write](keys: Iterable[A]): IO[Exception, Long] = executeInteger(Chunk.single(EXISTS) ++ Chunk.fromArray(keys.view.map(Write(_)).toArray))
+  def del[A: Write](keys: Iterable[A]): IO[Exception, Long] = executeInteger(Chunk.single(DEL) ++ Chunk.fromArray(keys.view.map(Write(_)).toArray))
   def ping: IO[Exception, Unit] = executeUnit(Chunk.single(PING))
   def get[A: Write](key: A): Redis.OptionalResult[Any] = Redis.OptionalResult(executeOptional(Chunk(GET, Write(key))))
   def set[A: Write, B: Write](key: A, value: B): IO[Exception, Unit] = executeUnit(Chunk(SET, Write(key), Write(value)))
@@ -88,6 +90,21 @@ object RedisClient {
     def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
       case RedisString("OK") => promise.succeed(()).unit
       case _                 => promise.fail(new RuntimeException("Invalid RedisType")).unit
+    }
+  }
+
+  private class BooleanResponse(promise: Promise[Exception, Boolean]) extends Response[Boolean](promise) {
+    def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
+      case RedisInteger(1) => promise.succeed(true).unit
+      case RedisInteger(0) => promise.succeed(false).unit
+      case _               => promise.fail(new RuntimeException("Invalid RedisType")).unit
+    }
+  }
+
+  private class IntegerResponse(promise: Promise[Exception, Long]) extends Response[Long](promise) {
+    def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
+      case RedisInteger(value) => promise.succeed(value).unit
+      case _                   => promise.fail(new RuntimeException("Invalid RedisType")).unit
     }
   }
 
