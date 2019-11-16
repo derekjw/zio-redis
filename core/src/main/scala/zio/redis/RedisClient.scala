@@ -48,10 +48,10 @@ class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[
 
 object RedisClient {
   // TODO: Handle connection error
-  def apply(port: Int = 6379): Managed[Exception, Redis.Service[Any]] =
+  def apply(port: Int = 6379, writeQueueSize: Int = 32): Managed[Exception, Redis.Service[Any]] =
     for {
       channel <- managedChannel(port)
-      writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](32).toManaged_
+      writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](writeQueueSize).toManaged_
       responsesQueue <- Queue.unbounded[Response[_]].toManaged_ // trigger failures for enqueued responses on release?
       _ <- writeLoop(writeQueue, responsesQueue, channel.write).fork.toManaged_
       reader = channel.read(8192).catchSome { case _: AsynchronousCloseException | _: ClosedChannelException => ZIO.succeed(Chunk.empty) }
