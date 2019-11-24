@@ -1,28 +1,26 @@
 package zio.redis
 
-import java.nio.channels.{AsynchronousCloseException, ClosedChannelException}
-
 import zio.nio.SocketAddress
 import zio.nio.channels.AsynchronousSocketChannel
 import zio.redis.protocol.Constants._
 import zio.redis.protocol.{Bytes, Done, Iteratee, Iteratees, RedisBulk, RedisInteger, RedisMulti, RedisString, RedisType}
 import zio.redis.serialization.Write
 import zio.stream.ZStream
-import zio.{Chunk, IO, Managed, Promise, Queue, ZIO, ZSchedule, redis}
+import zio.{Chunk, Fiber, IO, Managed, Promise, Queue, Schedule, ZIO, redis}
 
 import scala.annotation.tailrec
 
 class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[_])]) extends Redis.Service[Any] {
   private def executeUnit(request: Chunk[Chunk[Byte]]): IO[RedisClientFailure, Unit] =
-    Promise.make[UnexpectedResponse, Unit].flatMap(p => send(request, new RedisClient.UnitResponse(p)))
+    Promise.make[RedisClientFailure, Unit].flatMap(p => send(request, new RedisClient.UnitResponse(p)))
   private def executeBoolean(request: Chunk[Chunk[Byte]]): IO[RedisClientFailure, Boolean] =
-    Promise.make[UnexpectedResponse, Boolean].flatMap(p => send(request, new RedisClient.BooleanResponse(p)))
+    Promise.make[RedisClientFailure, Boolean].flatMap(p => send(request, new RedisClient.BooleanResponse(p)))
   private def executeInteger(request: Chunk[Chunk[Byte]]): IO[RedisClientFailure, Long] =
-    Promise.make[UnexpectedResponse, Long].flatMap(p => send(request, new RedisClient.IntegerResponse(p)))
+    Promise.make[RedisClientFailure, Long].flatMap(p => send(request, new RedisClient.IntegerResponse(p)))
   private def executeOptional(request: Chunk[Chunk[Byte]]): IO[RedisClientFailure, Option[Chunk[Byte]]] =
-    Promise.make[UnexpectedResponse, Option[Chunk[Byte]]].flatMap(p => send(request, new RedisClient.BulkResponse(p)))
+    Promise.make[RedisClientFailure, Option[Chunk[Byte]]].flatMap(p => send(request, new RedisClient.BulkResponse(p)))
   private def executeMultiBulk(request: Chunk[Chunk[Byte]]): IO[RedisClientFailure, Chunk[Chunk[Byte]]] =
-    Promise.make[UnexpectedResponse, Chunk[Chunk[Byte]]].flatMap(p => send(request, new redis.RedisClient.MultiBulkResponse(p)))
+    Promise.make[RedisClientFailure, Chunk[Chunk[Byte]]].flatMap(p => send(request, new redis.RedisClient.MultiBulkResponse(p)))
 
   private def send[A](request: Chunk[Chunk[Byte]], response: RedisClient.Response[A]): IO[RedisClientFailure, A] =
     writeQueue.offer((format(request), response)) *> response.get
@@ -53,17 +51,18 @@ object RedisClient {
   def apply(port: Int = 6379, writeQueueSize: Int = 32): Managed[ConnectionFailure, Redis.Service[Any]] =
     for {
       channel <- managedChannel(port)
-      writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](writeQueueSize).toManaged_
-      responsesQueue <- Queue.unbounded[Response[_]].toManaged_ // trigger failures for enqueued responses on release?
-      _ <- writeLoop(writeQueue, responsesQueue, channel.write(_).mapError(e => ConnectionFailure("Failed to write", Some(e)))).fork.toManaged_
-      reader = channel.read(8192).catchSome { case _: AsynchronousCloseException | _: ClosedChannelException => ZIO.succeed(Chunk.empty) }
-      _ <- ZStream
+      writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](writeQueueSize).toManaged(_.shutdown)
+      responsesQueue <- Queue.unbounded[Response[_]].toManaged(_.shutdown)
+      _ <- (Fiber.fiberName.set(Some("Redis Writer")) *> writeLoop(writeQueue, responsesQueue, channel.write(_).mapError(e => ConnectionFailure("Failed to write", Some(e))))).toManaged_.fork
+      reader = channel.read(8192).catchAll(e => ZIO.fail(ConnectionFailure("Failed to read", Some(e))))
+      _ <- (Fiber.fiberName.set(Some("Redis Reader")) *> ZStream
         .fromEffect(reader)
-        .repeat(ZSchedule.forever)
+        .repeat(Schedule.forever)
         .mapAccum(Iteratees.readResult)(parseResponse(_, _))
-        .foreach(_.mapM_(bytes => responsesQueue.take.flatMap(_(bytes))))
-        .fork
+        .foreach(_.mapM_(bytes => responsesQueue.take.flatMap(_(bytes)))))
+        .catchAll(e => ZStream.fromQueue(responsesQueue).mapM(_.fail(e)).runDrain)
         .toManaged_
+        .fork
     } yield new RedisClient(writeQueue)
 
   private def managedChannel(port: Int): Managed[ConnectionFailure, AsynchronousSocketChannel] =
@@ -82,19 +81,20 @@ object RedisClient {
       case (cont, _)                      => (cont, results)
     }
 
-  private abstract class Response[T](promise: Promise[UnexpectedResponse, T]) {
+  private abstract class Response[T](promise: Promise[RedisClientFailure, T]) {
     def apply(redisType: RedisType): ZIO[Any, Nothing, Unit]
-    def get: IO[UnexpectedResponse, T] = promise.await
+    def get: IO[RedisClientFailure, T] = promise.await
+    def fail(cause: RedisClientFailure): ZIO[Any, Nothing, Unit] = promise.fail(cause).unit
   }
 
-  private class UnitResponse(promise: Promise[UnexpectedResponse, Unit]) extends Response[Unit](promise) {
+  private class UnitResponse(promise: Promise[RedisClientFailure, Unit]) extends Response[Unit](promise) {
     def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
       case RedisString("OK") => promise.succeed(()).unit
       case _                 => promise.fail(UnexpectedResponse("Invalid RedisType")).unit
     }
   }
 
-  private class BooleanResponse(promise: Promise[UnexpectedResponse, Boolean]) extends Response[Boolean](promise) {
+  private class BooleanResponse(promise: Promise[RedisClientFailure, Boolean]) extends Response[Boolean](promise) {
     def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
       case RedisInteger(1) => promise.succeed(true).unit
       case RedisInteger(0) => promise.succeed(false).unit
@@ -102,21 +102,21 @@ object RedisClient {
     }
   }
 
-  private class IntegerResponse(promise: Promise[UnexpectedResponse, Long]) extends Response[Long](promise) {
+  private class IntegerResponse(promise: Promise[RedisClientFailure, Long]) extends Response[Long](promise) {
     def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
       case RedisInteger(value) => promise.succeed(value).unit
       case _                   => promise.fail(UnexpectedResponse("Invalid RedisType")).unit
     }
   }
 
-  private class BulkResponse(promise: Promise[UnexpectedResponse, Option[Chunk[Byte]]]) extends Response[Option[Chunk[Byte]]](promise) {
+  private class BulkResponse(promise: Promise[RedisClientFailure, Option[Chunk[Byte]]]) extends Response[Option[Chunk[Byte]]](promise) {
     def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
       case RedisBulk(value) => promise.succeed(value).unit
       case _                => promise.fail(UnexpectedResponse("Invalid RedisType")).unit
     }
   }
 
-  private class MultiBulkResponse(promise: Promise[UnexpectedResponse, Chunk[Chunk[Byte]]]) extends Response[Chunk[Chunk[Byte]]](promise) {
+  private class MultiBulkResponse(promise: Promise[RedisClientFailure, Chunk[Chunk[Byte]]]) extends Response[Chunk[Chunk[Byte]]](promise) {
     def apply(redisType: RedisType): ZIO[Any, Nothing, Unit] = redisType match {
       case RedisMulti(multiValue) =>
         promise.completeWith {
@@ -130,20 +130,21 @@ object RedisClient {
 
   private def writeLoop(writingQueue: Queue[(Chunk[Byte], Response[_])], responseQueue: Queue[Response[_]], write: Chunk[Byte] => IO[ConnectionFailure, Int]): IO[ConnectionFailure, Unit] = {
     val dequeue = writingQueue.take.flatMap { first =>
-      writingQueue.takeAll.flatMap { rest =>
+      writingQueue.takeAll.map { rest =>
         val (writes, responses) = (first :: rest).unzip
-        responseQueue.offerAll(responses).as(writes.reduce(_ ++ _))
+        (writes.reduce(_ ++ _).materialize, responses)
       }
     }
 
-    def run(ready: Chunk[Byte]): IO[ConnectionFailure, Unit] =
-      if (ready.nonEmpty) {
-        write(ready).fork >>= (dequeue <* _.join) >>= run
+    def run(ready: (Chunk[Byte], List[Response[_]])): IO[ConnectionFailure, Unit] =
+      if (ready._1.nonEmpty) {
+        val writeAction = write(ready._1).foldM(failure => ZIO.foreach_(ready._2)(_.fail(failure)), _ => responseQueue.offerAll(ready._2))
+        writeAction.fork >>= (dequeue <* _.join) >>= run
       } else {
         dequeue >>= run
       }
 
-    run(Chunk.empty)
+    run((Chunk.empty, Nil))
   }
 
 }

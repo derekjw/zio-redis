@@ -1,7 +1,7 @@
 package zio.redis
 
 import zio.internal.{Platform, PlatformLive}
-import zio.{Chunk, ZEnv, ZIO}
+import zio.{Chunk, Fiber, ZEnv, ZIO}
 import zio.console.putStrLn
 import zio.redis.serialization.Write
 import zio.redis.mock.MockRedis
@@ -41,15 +41,16 @@ object RedisBaseSpec
     )
 
 object TestRun extends zio.App {
-  override val Platform: Platform = PlatformLive.Benchmark
+  override val platform: Platform = PlatformLive.Benchmark
 
   def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
-    val ops = 200000
-    val key = Write("foo3")
-    val action = (0 until ops).map(n => Redis.>.set(key, Write("bar" + n))).reduceLeft(_.zipWithPar(_)((_, _) => ())) *> Redis.>.get("foo3").as[String]
-    val env = Redis.live(6379) @@ enrichWith[ZEnv](Environment)
+    val ops = 300000
+    val key = Write("foo")
+    val action = ZIO.foreach(0 until ops)(n => Redis.>.set(key, Write("bar" + n)).fork).flatMap(ZIO.foreach_(_)(_.join)) *> Redis.>.get("foo").as[String]
+    val env = Redis.live(6379) @@ enrichWith[ZEnv](environment)
 
     val app = for {
+      _ <- Fiber.fiberName.set(Some("TestRun"))
       _ <- action
       result <- action.timed
       opsPerSec = ops * 1000 / result._1.toMillis
@@ -58,6 +59,8 @@ object TestRun extends zio.App {
       keyResult <- Redis.>.allkeys.as[List[String]]
       _ <- putStrLn(s"All keys: $keyResult")
     } yield ()
+
+    //val dump = Fiber.dump.flatMap(ZIO.foreach_(_)(_.prettyPrintM.flatMap(putStrLn)))
 
     app.provideManaged(env).orDie.as(0)
   }
