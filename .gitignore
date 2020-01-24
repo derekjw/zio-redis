@@ -1,9 +1,12 @@
 .DS_Store
+.bloop
 .ensime
 .idea
+.metals
 lib_managed
 src_managed
 project/boot
+project/metals.sbt
 project/plugins/project
 project/plugins/src_managed
 target
