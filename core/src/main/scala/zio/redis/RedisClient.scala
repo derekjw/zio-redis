@@ -1,6 +1,6 @@
 package zio.redis
 
-import zio.nio.SocketAddress
+import zio.nio.core.SocketAddress
 import zio.nio.channels.AsynchronousSocketChannel
 import zio.redis.protocol.Constants._
 import zio.redis.protocol.{Bytes, Done, Iteratee, Iteratees, RedisBulk, RedisInteger, RedisMulti, RedisString, RedisType}
@@ -10,7 +10,7 @@ import zio.{Chunk, Fiber, IO, Managed, Promise, Queue, Schedule, ZIO, redis}
 
 import scala.annotation.tailrec
 
-class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[_])]) extends Redis.Service[Any] {
+class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[_])]) extends Redis.Service {
   private def executeUnit(request: Chunk[Chunk[Byte]]): IO[RedisClientFailure, Unit] =
     Promise.make[RedisClientFailure, Unit].flatMap(p => send(request, new RedisClient.UnitResponse(p)))
   private def executeBoolean(request: Chunk[Chunk[Byte]]): IO[RedisClientFailure, Boolean] =
@@ -48,7 +48,7 @@ class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[
 
 object RedisClient {
   // TODO: Handle connection error
-  def apply(port: Int = 6379, writeQueueSize: Int = 32): Managed[ConnectionFailure, Redis.Service[Any]] =
+  def apply(port: Int = 6379, writeQueueSize: Int = 32): Managed[ConnectionFailure, Redis.Service] =
     for {
       channel <- managedChannel(port)
       writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](writeQueueSize).toManaged(_.shutdown)
