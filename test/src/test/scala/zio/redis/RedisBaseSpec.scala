@@ -16,27 +16,22 @@ object RedisBaseSpec extends DefaultRunnableSpec {
   def spec =
     suite("RedisBaseSpec")(
       testM("ping") {
-        Redis.>.ping
-          .as(assertCompletes)
-          .provideLayer(
-            ping.returns(unit)
-          )
+        val app = Redis.>.ping
+        val env = ping returns unit
+        val result = app.provideLayer(env)
+        assertM(result)(isUnit)
       },
       testM("get") {
-        Redis.>.get("theKey")
-          .as[String]
-          .map(assert(_)(equalTo(Some("theValue"))))
-          .provideLayer(
-            get(equalTo(Write("theKey"))).returns(value(Some(Write("theValue"))))
-          )
+        val app = Redis.>.get("theKey").as[String]
+        val env = get(equalTo(Write("theKey"))) returns value(Some(Write("theValue")))
+        val result = app.provideLayer(env)
+        assertM(result)(equalTo(Some("theValue")))
       },
       testM("allkeys") {
-        Redis.>.allkeys
-          .as[List[String]]
-          .map(assert(_)(equalTo(List("key1", "key2"))))
-          .provideLayer(
-            keys(equalTo(Constants.ALLKEYS)).returns(value(Chunk(Write("key1"), Write("key2"))))
-          )
+        val app = Redis.>.allkeys.as[List[String]]
+        val env = keys(equalTo(Constants.ALLKEYS)) returns value(Chunk(Write("key1"), Write("key2")))
+        val result = app.provideLayer(env)
+        assertM(result)(equalTo(List("key1", "key2")))
       }
     )
 }
