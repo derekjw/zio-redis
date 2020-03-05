@@ -53,7 +53,8 @@ object RedisClient {
       channel <- managedChannel(port)
       writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](writeQueueSize).toManaged(_.shutdown)
       responsesQueue <- Queue.unbounded[Response[_]].toManaged(_.shutdown)
-      _ <- (Fiber.fiberName.set(Some("Redis Writer")) *> writeLoop(writeQueue, responsesQueue, channel.write(_).mapError(e => ConnectionFailure("Failed to write", Some(e))))).toManaged_.fork.mapM(_.disown)  // FIXME: better fiber management
+      _ <- (Fiber.fiberName.set(Some("Redis Writer")) *> writeLoop(writeQueue, responsesQueue, channel.write(_).mapError(e => ConnectionFailure("Failed to write", Some(e))))).toManaged_.fork
+        .mapM(_.disown) // FIXME: better fiber management
       reader = channel.read(8192).catchAll(e => ZIO.fail(ConnectionFailure("Failed to read", Some(e))))
       _ <- (Fiber.fiberName.set(Some("Redis Reader")) *> ZStream
         .fromEffect(reader)
@@ -62,7 +63,8 @@ object RedisClient {
         .foreach(_.mapM_(bytes => responsesQueue.take.flatMap(_(bytes)))))
         .catchAll(e => ZStream.fromQueue(responsesQueue).mapM(_.fail(e)).runDrain)
         .toManaged_
-        .fork.mapM(_.disown) // FIXME: better fiber management
+        .fork
+        .mapM(_.disown) // FIXME: better fiber management
     } yield new RedisClient(writeQueue)
 
   private def managedChannel(port: Int): Managed[ConnectionFailure, AsynchronousSocketChannel] =
