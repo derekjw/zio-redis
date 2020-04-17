@@ -3,7 +3,7 @@ package zio.redis.mock
 import zio.redis.{Redis, RedisClientFailure}
 import zio.redis.serialization.Write
 import zio.test.mock.{Method, Mock, Mockable}
-import zio.{Chunk, Has, ZIO}
+import zio.{Chunk, Has, IO}
 
 object MockRedis {
   object keys extends Method[Redis.Service, Chunk[Byte], Chunk[Chunk[Byte]]]
@@ -21,13 +21,13 @@ object MockRedis {
     Has(new Redis.Service {
       override def keys[A: Write](pattern: A): Redis.MultiValueResult[Any] = Redis.MultiValueResult(mock(MockRedis.keys, Write(pattern)))
       override def randomKey: Redis.OptionalResult[Any] = Redis.OptionalResult(mock(MockRedis.randomKey))
-      override def rename[A: Write, B: Write](oldKey: A, newKey: B): ZIO[Any, RedisClientFailure, Unit] = mock(MockRedis.rename, (Write(oldKey), Write(newKey)))
-      override def renamenx[A: Write, B: Write](oldKey: A, newKey: B): ZIO[Any, RedisClientFailure, Boolean] = mock(MockRedis.renamenx, (Write(oldKey), Write(newKey)))
-      override def dbsize: ZIO[Any, RedisClientFailure, Long] = mock(MockRedis.dbsize)
-      override def exists[A: Write](keys: Iterable[A]): ZIO[Any, RedisClientFailure, Long] = mock(MockRedis.exists, keys.map(Write(_)))
-      override def del[A: Write](keys: Iterable[A]): ZIO[Any, RedisClientFailure, Long] = mock(MockRedis.del, keys.map(Write(_)))
-      override def ping: ZIO[Any, RedisClientFailure, Unit] = mock(MockRedis.ping)
+      override def rename[A: Write, B: Write](oldKey: A, newKey: B): IO[RedisClientFailure, Unit] = mock(MockRedis.rename, (Write(oldKey), Write(newKey)))
+      override def renamenx[A: Write, B: Write](oldKey: A, newKey: B): IO[RedisClientFailure, Boolean] = mock(MockRedis.renamenx, (Write(oldKey), Write(newKey)))
+      override def dbsize: IO[RedisClientFailure, Long] = mock(MockRedis.dbsize)
+      override def exists[A: Write](keys: Iterable[A]): IO[RedisClientFailure, Long] = mock(MockRedis.exists, keys.map(Write(_)))
+      override def del[A: Write](keys: Iterable[A]): IO[RedisClientFailure, Long] = mock(MockRedis.del, keys.map(Write(_)))
+      override def ping: IO[RedisClientFailure, Unit] = mock(MockRedis.ping)
       override def get[A: Write](key: A): Redis.OptionalResult[Any] = Redis.OptionalResult(mock(MockRedis.get, Write(key)))
-      override def set[A: Write, B: Write](key: A, value: B): ZIO[Any, Nothing, Unit] = mock(MockRedis.set, (Write(key), Write(value)))
+      override def set[A: Write, B: Write](key: A, value: B): IO[Nothing, Unit] = mock(MockRedis.set, (Write(key), Write(value)))
     })
 }

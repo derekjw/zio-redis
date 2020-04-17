@@ -1,12 +1,13 @@
 package zio.redis
 
+import zio.logging.{LogAnnotation, Logging}
 import zio.nio.core.SocketAddress
 import zio.nio.channels.AsynchronousSocketChannel
 import zio.redis.protocol.Constants._
 import zio.redis.protocol.{Bytes, Done, Iteratee, Iteratees, RedisBulk, RedisInteger, RedisMulti, RedisString, RedisType}
 import zio.redis.serialization.Write
 import zio.stream.ZStream
-import zio.{Chunk, Fiber, IO, Managed, Promise, Queue, Schedule, ZIO, redis}
+import zio.{Chunk, Fiber, IO, Managed, Promise, Queue, Schedule, ZIO, ZManaged, redis}
 
 import scala.annotation.tailrec
 
@@ -48,9 +49,11 @@ class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[
 
 object RedisClient {
   // TODO: Handle connection error
-  def apply(port: Int = 6379, writeQueueSize: Int = 32): Managed[ConnectionFailure, Redis.Service] =
+  def apply(host: String = "localhost", port: Int = 6379, writeQueueSize: Int = 32): ZManaged[Logging, ConnectionFailure, Redis.Service] =
     for {
-      channel <- managedChannel(port)
+      logger <- Logging.logger.map(_.derive(LogAnnotation.Name("Redis" :: Nil))).toManaged_
+      _ <- logger.log("Starting").toManaged(_ => logger.log("Shutdown"))
+      channel <- managedChannel(host, port)
       writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](writeQueueSize).toManaged(_.shutdown)
       responsesQueue <- Queue.unbounded[Response[_]].toManaged(_.shutdown)
       _ <- (Fiber.fiberName.set(Some("Redis Writer")) *> writeLoop(writeQueue, responsesQueue, channel.write(_).mapError(e => ConnectionFailure("Failed to write", Some(e))))).toManaged_.fork
@@ -67,10 +70,9 @@ object RedisClient {
         .mapM(_.disown) // FIXME: better fiber management
     } yield new RedisClient(writeQueue)
 
-  private def managedChannel(port: Int): Managed[ConnectionFailure, AsynchronousSocketChannel] =
+  private def managedChannel(host: String, port: Int): Managed[ConnectionFailure, AsynchronousSocketChannel] =
     for {
       channel <- AsynchronousSocketChannel().mapError(e => ConnectionFailure(s"Unable to open socket", Some(e)))
-      host = "localhost"
       address <- SocketAddress.inetSocketAddress(host, port).mapError(e => ConnectionFailure(s"Unable to create address: $host:$port", Some(e))).toManaged_
       _ <- channel.connect(address).mapError(e => ConnectionFailure(s"Unable to connect to $address", Some(e))).toManaged_
     } yield channel
