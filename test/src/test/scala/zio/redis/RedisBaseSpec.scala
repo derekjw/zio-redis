@@ -42,7 +42,7 @@ object TestRun extends zio.App {
   def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
     val ops = 500000
     val key = Write("foo")
-    val action = ZIO.foreach(0 until ops)(n => Redis.set(key, Write("bar" + n)).fork).flatMap(ZIO.foreach_(_)(_.join)) *> Redis.get("foo").as[String]
+    val action = ZIO.foreach(1 to ops)(n => Redis.set(key, Write("bar" + n)).fork).flatMap(ZIO.foreach_(_)(_.join)) *> Redis.get("foo").as[String]
     val logging = Logging.console((_, l) => l)
     val env = (logging >>> Redis.live()) ++ ZEnv.live ++ logging
 
