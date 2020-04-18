@@ -48,10 +48,14 @@ object TestRun extends zio.App {
 
     val app = for {
       _ <- Fiber.fiberName.set(Some("TestRun"))
+      _ <- Logging.info("Warmup starting")
       _ <- action
+      _ <- Logging.info("Warmup completed")
+      _ <- Logging.info("Test starting")
       result <- action.timed
+      _ <- Logging.info("Test completed")
       opsPerSec = ops * 1000 / result._1.toMillis
-      _ <- Logging.info(s"$opsPerSec/s")
+      _ <- Logging.info(s"$opsPerSec ops/s")
       _ <- Logging.info(result._2.getOrElse("NULL"))
       keyResult <- Redis.allkeys.as[List[String]]
       _ <- Logging.info(s"All keys: $keyResult")
