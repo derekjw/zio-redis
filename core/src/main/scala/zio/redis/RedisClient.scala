@@ -7,7 +7,7 @@ import zio.redis.protocol.Constants._
 import zio.redis.protocol.{Bytes, Done, Iteratee, Iteratees, RedisBulk, RedisInteger, RedisMulti, RedisString, RedisType}
 import zio.redis.serialization.Write
 import zio.stream.ZStream
-import zio.{Chunk, Fiber, IO, Managed, Promise, Queue, Schedule, ZIO, ZManaged, redis}
+import zio.{Chunk, Fiber, IO, Managed, Promise, Queue, Schedule, ZIO, ZLayer, ZManaged, redis}
 
 import scala.annotation.tailrec
 
@@ -49,9 +49,9 @@ class RedisClient private (writeQueue: Queue[(Chunk[Byte], RedisClient.Response[
 
 object RedisClient {
   // TODO: Handle connection error
-  def apply(host: String = "localhost", port: Int = 6379, writeQueueSize: Int = 32): ZManaged[Logging, ConnectionFailure, Redis.Service] =
-    for {
-      _ <- redisLogging("Client" :: Nil)(Logging.info("Starting")).toManaged(_ => redisLogging("Client" :: Nil)(Logging.info("Shutdown")))
+  def apply(host: String = "localhost", port: Int = 6379, writeQueueSize: Int = 32): ZManaged[Logging, ConnectionFailure, Redis.Service] = {
+    val redisClient = for {
+      _ <- Logging.info("Starting").toManaged(_ => Logging.info("Shutdown"))
       channel <- managedChannel(host, port)
       writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](writeQueueSize).toManaged(_.shutdown)
       responsesQueue <- Queue.unbounded[Response[_]].toManaged(_.shutdown)
@@ -69,7 +69,10 @@ object RedisClient {
         .mapM(_.disown) // FIXME: better fiber management
     } yield new RedisClient(writeQueue)
 
-  private def redisLogging[R, E, A](name: List[String]): ZIO[R, E, A] => ZIO[Logging with R, E, A] = Logging.locally(LogAnnotation.Name("Redis" :: name))
+    ZIO.access[Logging](_.get.derive(LogAnnotation.Name("Redis" :: "Client" :: Nil))).toManaged_.flatMap { logger =>
+      redisClient.provideSomeLayer(ZLayer.succeed(logger))
+    }
+  }
 
   private def managedChannel(host: String, port: Int): Managed[ConnectionFailure, AsynchronousSocketChannel] =
     for {

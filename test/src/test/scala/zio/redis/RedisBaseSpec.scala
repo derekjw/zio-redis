@@ -2,7 +2,7 @@ package zio.redis
 
 import zio.internal.Platform
 import zio.{Chunk, Fiber, ZEnv, ZIO}
-import zio.logging.{LogAnnotation, Logging}
+import zio.logging.Logging
 import zio.redis.serialization.Write
 import zio.redis.mock.MockRedis
 import zio.test._
@@ -43,21 +43,19 @@ object TestRun extends zio.App {
     val ops = 500000
     val key = Write("foo")
     val action = ZIO.foreach(1 to ops)(n => Redis.set(key, Write("bar" + n)).fork).flatMap(ZIO.foreach_(_)(_.join)) *> Redis.get("foo").as[String]
-    val logging = Logging.console((_, l) => l)
+    val logging = Logging.console((_, l) => l, Some("TestRun"))
     val env = (logging >>> Redis.live()) ++ ZEnv.live ++ logging
 
-    val app = Logging.locally(LogAnnotation.Name("TestRun" :: Nil)) {
-      for {
-        _ <- Fiber.fiberName.set(Some("TestRun"))
-        _ <- action
-        result <- action.timed
-        opsPerSec = ops * 1000 / result._1.toMillis
-        _ <- Logging.info(s"$opsPerSec/s")
-        _ <- Logging.info(result._2.getOrElse("NULL"))
-        keyResult <- Redis.allkeys.as[List[String]]
-        _ <- Logging.info(s"All keys: $keyResult")
-      } yield ()
-    }
+    val app = for {
+      _ <- Fiber.fiberName.set(Some("TestRun"))
+      _ <- action
+      result <- action.timed
+      opsPerSec = ops * 1000 / result._1.toMillis
+      _ <- Logging.info(s"$opsPerSec/s")
+      _ <- Logging.info(result._2.getOrElse("NULL"))
+      keyResult <- Redis.allkeys.as[List[String]]
+      _ <- Logging.info(s"All keys: $keyResult")
+    } yield ()
 
 //    val dump = Fiber.dump.flatMap(ZIO.foreach_(_)(_.prettyPrintM.flatMap(putStrLn)))
 
