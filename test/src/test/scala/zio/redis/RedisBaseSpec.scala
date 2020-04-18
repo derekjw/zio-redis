@@ -3,7 +3,6 @@ package zio.redis
 import zio.internal.Platform
 import zio.{Chunk, Fiber, ZEnv, ZIO}
 import zio.logging.{LogAnnotation, Logging}
-import zio.logging.Logging.log
 import zio.redis.serialization.Write
 import zio.redis.mock.MockRedis
 import zio.test._
@@ -53,10 +52,10 @@ object TestRun extends zio.App {
         _ <- action
         result <- action.timed
         opsPerSec = ops * 1000 / result._1.toMillis
-        _ <- log(s"$opsPerSec/s")
-        _ <- log(result._2.getOrElse("NULL"))
+        _ <- Logging.info(s"$opsPerSec/s")
+        _ <- Logging.info(result._2.getOrElse("NULL"))
         keyResult <- Redis.allkeys.as[List[String]]
-        _ <- log(s"All keys: $keyResult")
+        _ <- Logging.info(s"All keys: $keyResult")
       } yield ()
     }
 

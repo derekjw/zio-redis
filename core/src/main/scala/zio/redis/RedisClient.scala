@@ -51,7 +51,7 @@ object RedisClient {
   // TODO: Handle connection error
   def apply(host: String = "localhost", port: Int = 6379, writeQueueSize: Int = 32): ZManaged[Logging, ConnectionFailure, Redis.Service] =
     for {
-      logger <- Logging.logger.map(_.derive(LogAnnotation.Name("Redis" :: Nil))).toManaged_
+      logger <- ZIO.access[Logging](_.get.derive(LogAnnotation.Name("Redis" :: Nil))).toManaged_
       _ <- logger.log("Starting").toManaged(_ => logger.log("Shutdown"))
       channel <- managedChannel(host, port)
       writeQueue <- Queue.bounded[(Chunk[Byte], Response[_])](writeQueueSize).toManaged(_.shutdown)
